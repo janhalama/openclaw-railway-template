@@ -281,12 +281,12 @@ async function ensureGatewayRunning() {
   if (gatewayProc) return { ok: true };
   if (!gatewayStarting) {
     gatewayStarting = (async () => {
+      await syncAllowedOrigins();
       await startGateway();
       const ready = await waitForGatewayReady({ timeoutMs: 60_000 });
       if (!ready) {
         throw new Error("Gateway did not become ready in time");
       }
-      await syncAllowedOrigins();
     })().finally(() => {
       gatewayStarting = null;
     });
