@@ -755,6 +755,50 @@ function validateWhatsappAllowFromField(raw) {
   return null;
 }
 
+function parseConfigGetJsonObject(output) {
+  const t = String(output ?? "").trim();
+  if (!t) return null;
+  const start = t.indexOf("{");
+  const end = t.lastIndexOf("}");
+  if (start === -1 || end <= start) return null;
+  try {
+    return JSON.parse(t.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+async function readChannelsWhatsappFromCli() {
+  const r = await runCmd(
+    OPENCLAW_NODE,
+    clawArgs(["config", "get", "channels.whatsapp"]),
+  );
+  const cfg = parseConfigGetJsonObject(r.output);
+  if (!cfg || typeof cfg !== "object") {
+    return { cfg: null };
+  }
+  return { cfg };
+}
+
+function validateWhatsappChannelUpdatePayload(body) {
+  if (!body || typeof body !== "object") return "Invalid body";
+  if (
+    body.whatsappAllowFrom !== undefined &&
+    typeof body.whatsappAllowFrom !== "string"
+  ) {
+    return "Invalid whatsappAllowFrom: must be a string";
+  }
+  if (
+    body.whatsappGroupPolicy !== "open" &&
+    body.whatsappGroupPolicy !== "allowlist"
+  ) {
+    return "Invalid whatsappGroupPolicy: must be open or allowlist";
+  }
+  const allowErr = validateWhatsappAllowFromField(body.whatsappAllowFrom ?? "");
+  if (allowErr) return allowErr;
+  return null;
+}
+
 function validatePayload(payload) {
   if (payload.authChoice && !VALID_AUTH_CHOICES.includes(payload.authChoice)) {
     return `Invalid authChoice: ${payload.authChoice}`;
@@ -1059,6 +1103,103 @@ app.post("/setup/api/models/set", requireSetupAuth, async (req, res) => {
     });
   } catch (err) {
     log.error("models-set", String(err));
+    return res.status(500).json({
+      ok: false,
+      output: `Internal error: ${String(err)}`,
+    });
+  }
+});
+
+app.get("/setup/api/channels/whatsapp", requireSetupAuth, async (_req, res) => {
+  try {
+    if (!isConfigured()) {
+      return res.status(400).json({
+        ok: false,
+        output: "Not configured. Run setup first.",
+      });
+    }
+    const { cfg } = await readChannelsWhatsappFromCli();
+    if (!cfg) {
+      return res.json({ ok: true, hasWhatsapp: false });
+    }
+    const allowFrom = Array.isArray(cfg.allowFrom) ? cfg.allowFrom : [];
+    const groupPolicy =
+      cfg.groupPolicy === "allowlist" ? "allowlist" : "open";
+    return res.json({
+      ok: true,
+      hasWhatsapp: true,
+      whatsappAllowFrom: allowFrom.join(", "),
+      whatsappGroupPolicy: groupPolicy,
+    });
+  } catch (err) {
+    log.error("whatsapp-channel-get", String(err));
+    return res.status(500).json({
+      ok: false,
+      output: `Internal error: ${String(err)}`,
+    });
+  }
+});
+
+app.post("/setup/api/channels/whatsapp", requireSetupAuth, async (req, res) => {
+  try {
+    if (!isConfigured()) {
+      return res.status(400).json({
+        ok: false,
+        output: "Not configured. Run setup first.",
+      });
+    }
+    const body = req.body || {};
+    const verr = validateWhatsappChannelUpdatePayload(body);
+    if (verr) {
+      return res.status(400).json({ ok: false, output: verr });
+    }
+    const { cfg } = await readChannelsWhatsappFromCli();
+    if (!cfg) {
+      return res.status(400).json({
+        ok: false,
+        output:
+          "No channels.whatsapp in config. Enable WhatsApp during initial setup (or add the channel with the OpenClaw CLI), then try again.",
+      });
+    }
+    const allowFrom = parseWhatsappAllowFromList(body.whatsappAllowFrom ?? "");
+    const groupPolicy =
+      body.whatsappGroupPolicy === "allowlist" ? "allowlist" : "open";
+    const next = { ...cfg, groupPolicy };
+    if (allowFrom.length) next.allowFrom = allowFrom;
+    else delete next.allowFrom;
+
+    const set = await runCmd(
+      OPENCLAW_NODE,
+      clawArgs([
+        "config",
+        "set",
+        "--json",
+        "channels.whatsapp",
+        JSON.stringify(next),
+      ]),
+    );
+    if (set.code !== 0) {
+      return res.status(500).json({
+        ok: false,
+        output: set.output || "(no output)",
+      });
+    }
+    try {
+      await restartGateway();
+    } catch (err) {
+      log.warn(
+        "whatsapp-channel-set",
+        `restartGateway after whatsapp config: ${err.message}`,
+      );
+    }
+    return res.json({
+      ok: true,
+      output:
+        (set.output ? `${set.output}\n` : "") +
+        "[setup] channels.whatsapp updated; gateway restarted.\n",
+    });
+  } catch (err) {
+    log.error("whatsapp-channel-set", String(err));
     return res.status(500).json({
       ok: false,
       output: `Internal error: ${String(err)}`,

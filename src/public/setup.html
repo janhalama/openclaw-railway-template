@@ -44,6 +44,10 @@
       devices: [],
       devicesPending: [],
       devicesPaired: [],
+      waSettingsLoaded: false,
+      waHasChannel: false,
+      waEditAllowFrom: '',
+      waEditGroupPolicy: 'open',
 
       get currentGroup() {
         return this.authGroups.find(g => g.value === this.selectedGroup);
@@ -81,6 +85,10 @@
           }
           if (j.configured) {
             this.configuredModel = String(j.currentModel || '');
+            await this.loadWhatsappSettings();
+          } else {
+            this.waSettingsLoaded = false;
+            this.waHasChannel = false;
           }
           this.isReady = true;
         } catch (e) {
@@ -266,6 +274,67 @@
         }
       },
 
+      async loadWhatsappSettings() {
+        this.waSettingsLoaded = false;
+        try {
+          const j = await this.httpJson('/setup/api/channels/whatsapp');
+          this.waHasChannel = j.hasWhatsapp === true;
+          if (this.waHasChannel) {
+            this.waEditAllowFrom = String(j.whatsappAllowFrom || '');
+            this.waEditGroupPolicy =
+              j.whatsappGroupPolicy === 'allowlist' ? 'allowlist' : 'open';
+          } else {
+            this.waEditAllowFrom = '';
+            this.waEditGroupPolicy = 'open';
+          }
+        } catch (e) {
+          this.waHasChannel = false;
+          this.log += '\n[whatsapp] Could not load channel settings: ' + String(e) + '\n';
+        } finally {
+          this.waSettingsLoaded = true;
+        }
+      },
+
+      async applyWhatsappSettings() {
+        if (!this.waHasChannel) {
+          alert(
+            'WhatsApp is not present in openclaw.json. Use Reset setup to rerun the wizard with WhatsApp enabled, or add the channel via the OpenClaw CLI.',
+          );
+          return;
+        }
+        this.log = 'Updating WhatsApp allowlist / group policy...\n';
+        this.loading = true;
+        try {
+          const res = await fetch('/setup/api/channels/whatsapp', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              whatsappAllowFrom: this.waEditAllowFrom,
+              whatsappGroupPolicy: this.waEditGroupPolicy,
+            }),
+          });
+          const text = await res.text();
+          let j;
+          try {
+            j = JSON.parse(text);
+          } catch (_e) {
+            j = { ok: false, output: text };
+          }
+          this.log += (j.output || JSON.stringify(j, null, 2)) + '\n';
+          if (j.ok) {
+            this.log += '✓ WhatsApp settings saved.\n';
+            await this.loadWhatsappSettings();
+          } else {
+            alert((j.output || 'Update failed').trim());
+          }
+        } catch (e) {
+          this.log += 'Error: ' + String(e) + '\n';
+        } finally {
+          this.loading = false;
+        }
+      },
+
       async exportData() {
         this.exporting = true;
         this.log = 'Preparing export...\n';
@@ -438,6 +507,36 @@
             Applying…
           </span>
         </button>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title" style="font-size:1rem">WhatsApp</h3>
+        <p class="card-subtitle">Change allowlist and group policy without resetting the whole wizard (requires an existing <code class="code-inline">channels.whatsapp</code> block)</p>
+        <p x-show="!waSettingsLoaded" class="text-muted text-sm">Loading WhatsApp settings…</p>
+        <div x-show="waSettingsLoaded && !waHasChannel" x-cloak class="text-muted text-sm">
+          No WhatsApp channel in config. Use <strong>Reset setup</strong> to run onboarding again with WhatsApp enabled, or add it with the OpenClaw CLI on the host.
+        </div>
+        <div x-show="waSettingsLoaded && waHasChannel" x-cloak>
+          <div class="form-group">
+            <label class="label">DM allowlist (E.164, comma-separated)</label>
+            <input x-model="waEditAllowFrom" type="text" class="input" placeholder="e.g. +15551234567, +447700900123" />
+            <p class="form-hint text-xs">Leave empty to clear the explicit allowlist (pairing / defaults still apply). See <a href="https://docs.openclaw.ai/channels/whatsapp" target="_blank" class="link-teal" style="text-decoration:underline">OpenClaw WhatsApp docs</a>.</p>
+          </div>
+          <div class="form-group">
+            <label class="label">Group sender policy</label>
+            <select x-model="waEditGroupPolicy" class="select">
+              <option value="open">Open</option>
+              <option value="allowlist">Allowlist</option>
+            </select>
+          </div>
+          <button type="button" @click="applyWhatsappSettings()" :disabled="loading" class="btn btn-primary">
+            <span x-show="!loading">Apply WhatsApp settings</span>
+            <span x-show="loading" style="display:inline-flex;align-items:center;gap:0.5rem">
+              <svg class="spinner-inline" fill="none" viewBox="0 0 24 24"><circle style="opacity:0.25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path style="opacity:0.75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+              Applying…
+            </span>
+          </button>
+        </div>
       </div>
 
       <div class="card">
