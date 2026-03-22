@@ -105,7 +105,7 @@ The wrapper manages a **two-layer auth scheme**:
 When the user runs setup (src/server.js:522-693):
 
 1. Calls `openclaw onboard --non-interactive` with user-selected auth provider
-2. Writes channel configs (Telegram/Discord/Slack) directly to `openclaw.json` via `openclaw config set --json`
+2. Writes channel configs (Telegram/Discord/Slack/WhatsApp) directly to `openclaw.json` via `openclaw config set --json`; WhatsApp also runs `openclaw plugins install --yes @openclaw/whatsapp` (session linking is done in the Control UI at `/openclaw`, not via a setup token field)
 3. Force-sets gateway config to use token auth + loopback bind + allowInsecureAuth
 4. Spawns gateway process
 5. Waits for gateway readiness (polls multiple endpoints)
@@ -154,9 +154,9 @@ Edit `buildOnboardArgs()` (src/server.js:442-496) to add new CLI flags or auth p
 
 ### Adding new channel types
 
-1. Add channel-specific fields to `/setup` HTML (src/public/setup.html)
+1. Add channel-specific fields to `/setup` HTML (src/public/setup.html; Alpine `setupApp` state and `runSetup` payload live inline)
 2. Add config-writing logic in `/setup/api/run` handler (src/server.js)
-3. Update client JS to collect the fields (src/public/setup-app.js)
+3. Update `validatePayload()` and any pairing allowlists if the channel supports pairing approval
 
 ## Railway Deployment Notes
 
@@ -195,3 +195,4 @@ This avoids repeatedly reading large files and provides instant context about th
 5. **Gateway spawn inherits stdio** → logs appear in wrapper output (src/server.js:134)
 6. **WebSocket auth requires proxy event handlers** → Direct `req.headers` modification doesn't work for WebSocket upgrades with http-proxy; must use `proxyReqWs` event (src/server.js:741) to reliably inject Authorization header
 7. **Control UI requires allowInsecureAuth to bypass pairing** → Set `gateway.controlUi.allowInsecureAuth=true` during onboarding to prevent "disconnected (1008): pairing required" errors (GitHub issue #2284). Wrapper already handles bearer token auth, so device pairing is unnecessary.
+8. **WhatsApp** → No bot token in the wizard; users scan the QR in the Control UI (`/openclaw`). Plugin install targets `$OPENCLAW_STATE_DIR` (Railway volume), so it is not baked into the Docker image layer under `/data`.

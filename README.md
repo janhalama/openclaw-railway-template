@@ -2,7 +2,7 @@
 
 ## Security Notice
 
-> **This template exposes your OpenClaw gateway to the public internet.** **Please read the [OpenClaw security documentation](https://docs.openclaw.ai/gateway/security) before deploying** to understand the risks and recommended configuration. If you only use chat channels (Telegram, Discord, Slack) and don't need the gateway dashboard, you can remove the public endpoint from Railway after setup.
+> **This template exposes your OpenClaw gateway to the public internet.** **Please read the [OpenClaw security documentation](https://docs.openclaw.ai/gateway/security) before deploying** to understand the risks and recommended configuration. If you only use chat channels (Telegram, Discord, Slack, WhatsApp) and don't need the gateway dashboard, you can remove the public endpoint from Railway after setup.
 
 <img width="1860" height="2624" alt="CleanShot 2026-02-23 at 21 59 06@2x" src="https://github.com/user-attachments/assets/2605d44c-4319-4e92-838c-3caa726b9595" />
 
@@ -36,6 +36,15 @@
 3. Open the **Bot** tab → **Add Bot**
 4. Copy the **Bot Token** and paste it into `/setup`
 5. Invite the bot to your server (OAuth2 URL Generator → scopes: `bot`, `applications.commands`; then choose permissions)
+
+### WhatsApp (WhatsApp Web)
+
+1. In `/setup` step **Channels**, enable **WhatsApp** and optionally set an E.164 allowlist (e.g. `+15551234567`) and group policy.
+2. Run setup. The template installs the [`@openclaw/whatsapp`](https://docs.openclaw.ai/channels/whatsapp) plugin and writes `channels.whatsapp` to your config.
+3. After the gateway starts, open **Open OpenClaw UI** (`/openclaw`) from the setup page and complete **WhatsApp login** there — scan the QR code with your phone (same flow as OpenClaw desktop).
+4. Default DM policy is **pairing**. To approve a pending DM user, use **Approve Channel Access** on `/setup` and choose channel **whatsapp** (see [OpenClaw pairing](https://docs.openclaw.ai/channels/whatsapp#approve-first-pairing-request-if-using-pairing-mode)).
+
+OpenClaw recommends a **dedicated phone number** for the bot when possible; see the [WhatsApp channel documentation](https://docs.openclaw.ai/channels/whatsapp) for policies, groups, and troubleshooting.
 
 ## Web Terminal (TUI)
 
@@ -99,9 +108,9 @@ A: Go back to `/setup` and click the "Open OpenClaw UI" button from there. The s
 
 A: Make sure `ENABLE_WEB_TUI=true` is set in your Railway Variables and redeploy. The web terminal is disabled by default.
 
-**Q: How do I approve pairing for Telegram or Discord?**
+**Q: How do I approve pairing for Telegram, Discord, or WhatsApp?**
 
-A: Go to `/setup` and use the "Approve Pairing" dialog to approve pending pairing requests from your chat channels.
+A: Go to `/setup` and use the "Approve Channel Access" dialog to approve pending pairing requests. Pick the channel (telegram, discord, or whatsapp) and enter the code from the user’s chat request.
 
 **Q: I see "pairing required" when opening the Control UI. How do I fix it?**
 

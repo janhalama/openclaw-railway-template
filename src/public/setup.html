@@ -25,6 +25,9 @@
       discordToken: '',
       slackBotToken: '',
       slackAppToken: '',
+      whatsappEnabled: false,
+      whatsappAllowFrom: '',
+      whatsappGroupPolicy: 'open',
       model: '',
       log: '',
       loading: false,
@@ -106,7 +109,10 @@
           telegramToken: this.telegramToken,
           discordToken: this.discordToken,
           slackBotToken: this.slackBotToken,
-          slackAppToken: this.slackAppToken
+          slackAppToken: this.slackAppToken,
+          whatsappEnabled: this.whatsappEnabled === true,
+          whatsappAllowFrom: this.whatsappAllowFrom,
+          whatsappGroupPolicy: this.whatsappGroupPolicy
         };
 
         this.log = 'Running...\n';
@@ -123,6 +129,11 @@
           let j;
           try { j = JSON.parse(text); } catch (_e) { j = { ok: false, output: text }; }
           this.log += (j.output || JSON.stringify(j, null, 2));
+          if (j.ok && this.whatsappEnabled) {
+            this.log += '\n[setup] WhatsApp: open the Control UI and complete linking (scan QR).\n' +
+              'Use “Open OpenClaw UI” above, then use the WhatsApp channel login flow.\n' +
+              'Docs: https://docs.openclaw.ai/channels/whatsapp\n';
+          }
           await this.refreshStatus();
         } catch (e) {
           this.log += '\nError: ' + String(e) + '\n';
@@ -139,8 +150,8 @@
 
       async approvePairing() {
         const channel = this.pairingChannel.trim().toLowerCase();
-        if (channel !== 'telegram' && channel !== 'discord') {
-          alert('Channel must be "telegram" or "discord"');
+        if (channel !== 'telegram' && channel !== 'discord' && channel !== 'whatsapp') {
+          alert('Channel must be telegram, discord, or whatsapp');
           return;
         }
         const code = this.pairingCode.trim();
@@ -345,7 +356,7 @@
     </div>
     <div style="margin-bottom:1.5rem;padding:0.75rem 1rem;border:1px solid #ef4444;border-radius:0.5rem;background:var(--bg-card)">
       <p style="font-size:0.75rem;color:var(--text-mid);line-height:1.5;margin:0">
-        <strong style="color:#ef4444">Important:</strong> This template exposes your OpenClaw gateway to the public internet. <strong style="color:var(--text)">Please read the <a href="https://docs.openclaw.ai/gateway/security" target="_blank" style="color:var(--text);text-decoration:underline">OpenClaw security documentation</a> before deploying.</strong> If you only use chat channels (Telegram, Discord, Slack) and don't need the gateway dashboard, you can remove the public endpoint from Railway after setup.
+        <strong style="color:#ef4444">Important:</strong> This template exposes your OpenClaw gateway to the public internet. <strong style="color:var(--text)">Please read the <a href="https://docs.openclaw.ai/gateway/security" target="_blank" style="color:var(--text);text-decoration:underline">OpenClaw security documentation</a> before deploying.</strong> If you only use chat channels (Telegram, Discord, Slack, WhatsApp) and don't need the gateway dashboard, you can remove the public endpoint from Railway after setup.
       </p>
     </div>
 
@@ -387,7 +398,7 @@
               </div>
               <span class="action-title">Approve Channel Access</span>
             </div>
-            <p class="action-desc">Grant DM access to users who have requested access on Telegram or Discord.</p>
+            <p class="action-desc">Grant DM access to users who have requested access on Telegram, Discord, or WhatsApp.</p>
             <button @click="openPairingModal()" :disabled="loading" class="action-btn">
               Approve Channel Access
             </button>
@@ -572,6 +583,29 @@
               <input x-model="slackAppToken" type="password" placeholder="App token (xapp-...)" class="input" style="margin-top:0.75rem" />
             </div>
           </div>
+
+          <div class="form-group">
+            <div class="channel-card channel-whatsapp">
+              <div class="channel-header">
+                <div class="channel-icon">
+                  <svg class="icon-md" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                </div>
+                <span class="channel-name">WhatsApp</span>
+              </div>
+              <label class="whatsapp-check-label">
+                <input type="checkbox" x-model="whatsappEnabled" class="whatsapp-check" />
+                <span>Enable WhatsApp (WhatsApp Web / Baileys)</span>
+              </label>
+              <p class="form-hint">After setup, open <strong>Open OpenClaw UI</strong> and use the in-app WhatsApp login to <strong>scan the QR code</strong>. DMs use pairing by default — approve requests from <code class="code-inline">/setup</code> if needed. See <a href="https://docs.openclaw.ai/channels/whatsapp" target="_blank" class="link-teal" style="text-decoration:underline">OpenClaw WhatsApp docs</a>.</p>
+              <label class="label" style="margin-top:0.75rem">Optional DM allowlist (E.164, comma-separated)</label>
+              <input x-model="whatsappAllowFrom" type="text" placeholder="e.g. +15551234567, +447700900123" class="input" :disabled="!whatsappEnabled" />
+              <label class="label" style="margin-top:0.75rem">Group policy</label>
+              <select x-model="whatsappGroupPolicy" class="select" :disabled="!whatsappEnabled">
+                <option value="open">Open (any member can trigger; mention rules still apply)</option>
+                <option value="allowlist">Allowlist (restrict senders via allowFrom / group settings)</option>
+              </select>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -601,7 +635,8 @@
                   <span x-show="telegramToken" class="badge badge-sky">Telegram</span>
                   <span x-show="discordToken" class="badge badge-indigo">Discord</span>
                   <span x-show="slackBotToken && slackAppToken" class="badge badge-green">Slack</span>
-                  <span x-show="!telegramToken && !discordToken && !(slackBotToken && slackAppToken)" class="text-muted">None</span>
+                  <span x-show="whatsappEnabled" class="badge badge-whatsapp">WhatsApp</span>
+                  <span x-show="!telegramToken && !discordToken && !(slackBotToken && slackAppToken) && !whatsappEnabled" class="text-muted">None</span>
                 </dd>
               </div>
             </dl>
@@ -739,6 +774,7 @@
             <option value="">Select channel...</option>
             <option value="telegram">Telegram</option>
             <option value="discord">Discord</option>
+            <option value="whatsapp">WhatsApp</option>
           </select>
         </div>
         <div class="form-group">

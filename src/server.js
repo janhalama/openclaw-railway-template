@@ -617,9 +617,52 @@ const VALID_AUTH_CHOICES = [
   "opencode-zen",
 ];
 
+const PAIRING_APPROVE_CHANNELS = new Set(["telegram", "discord", "whatsapp"]);
+
+function parseWhatsappAllowFromList(raw) {
+  if (!raw || typeof raw !== "string" || !raw.trim()) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function validateWhatsappAllowFromField(raw) {
+  const nums = parseWhatsappAllowFromList(raw ?? "");
+  for (const seg of nums) {
+    if (!/^\+\d{6,20}$/.test(seg)) {
+      return `Invalid allowlist entry "${seg}" — use E.164 with country code (e.g. +15551234567)`;
+    }
+  }
+  return null;
+}
+
 function validatePayload(payload) {
-if (payload.authChoice && !VALID_AUTH_CHOICES.includes(payload.authChoice)) {
+  if (payload.authChoice && !VALID_AUTH_CHOICES.includes(payload.authChoice)) {
     return `Invalid authChoice: ${payload.authChoice}`;
+  }
+  if (
+    payload.whatsappEnabled !== undefined &&
+    typeof payload.whatsappEnabled !== "boolean"
+  ) {
+    return "Invalid whatsappEnabled: must be a boolean";
+  }
+  if (
+    payload.whatsappAllowFrom !== undefined &&
+    typeof payload.whatsappAllowFrom !== "string"
+  ) {
+    return "Invalid whatsappAllowFrom: must be a string";
+  }
+  if (
+    payload.whatsappGroupPolicy !== undefined &&
+    payload.whatsappGroupPolicy !== "open" &&
+    payload.whatsappGroupPolicy !== "allowlist"
+  ) {
+    return "Invalid whatsappGroupPolicy: must be open or allowlist";
+  }
+  if (payload.whatsappEnabled === true) {
+    const allowErr = validateWhatsappAllowFromField(payload.whatsappAllowFrom ?? "");
+    if (allowErr) return allowErr;
   }
   const stringFields = [
     "telegramToken",
@@ -758,6 +801,27 @@ app.post("/setup/api/run", requireSetupAuth, async (req, res) => {
         });
       }
 
+      if (payload.whatsappEnabled === true) {
+        extra += "\n[setup] Installing WhatsApp plugin...\n";
+        const pluginR = await runCmd(
+          OPENCLAW_NODE,
+          clawArgs(["--yes", "plugins", "install", "@openclaw/whatsapp"]),
+        );
+        extra += `[plugins] install @openclaw/whatsapp exit=${pluginR.code}\n${pluginR.output || "(no output)"}`;
+        const groupPolicy =
+          payload.whatsappGroupPolicy === "allowlist" ? "allowlist" : "open";
+        const waCfg = {
+          enabled: true,
+          dmPolicy: "pairing",
+          groupPolicy,
+        };
+        const allowFrom = parseWhatsappAllowFromList(
+          payload.whatsappAllowFrom ?? "",
+        );
+        if (allowFrom.length) waCfg.allowFrom = allowFrom;
+        extra += await configureChannel("whatsapp", waCfg);
+      }
+
       extra += "\n[setup] Starting gateway...\n";
       await restartGateway();
       extra += "[setup] Gateway started.\n";
@@ -810,9 +874,13 @@ app.post("/setup/api/pairing/approve", requireSetupAuth, async (req, res) => {
       .status(400)
       .json({ ok: false, error: "Missing channel or code" });
   }
+  const ch = String(channel).trim().toLowerCase();
+  if (!PAIRING_APPROVE_CHANNELS.has(ch)) {
+    return res.status(400).json({ ok: false, error: "Invalid channel" });
+  }
   const r = await runCmd(
     OPENCLAW_NODE,
-    clawArgs(["pairing", "approve", String(channel), String(code)]),
+    clawArgs(["pairing", "approve", ch, String(code).trim()]),
   );
   return res
     .status(r.code === 0 ? 200 : 500)

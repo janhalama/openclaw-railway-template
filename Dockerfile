@@ -14,6 +14,9 @@ RUN apt-get update \
 
 RUN npm install -g openclaw@2026.3.13 clawhub@latest
 
+# @openclaw/whatsapp is installed during /setup when WhatsApp is enabled (plugins land under
+# OPENCLAW_STATE_DIR, which at runtime is on the Railway volume at /data/.openclaw).
+
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml ./
