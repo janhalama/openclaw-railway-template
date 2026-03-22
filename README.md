@@ -118,17 +118,15 @@ A: New browsers/devices need a one-time approval from the gateway. Go to `/setup
 
 **Q: How do I change the AI model after setup?**
 
-A: Use the OpenClaw CLI to switch models. Access the web terminal at `/tui` (if enabled) or SSH into your container and run:
+A: **Easiest:** go to `/setup` (after the instance is configured) and use the **Model** section — enter `provider/model` (e.g. `anthropic/claude-sonnet-4-20250514`) or an alias, then **Apply model**. The wrapper runs `openclaw models set` and restarts the gateway.
 
-```bash
-openclaw models set provider/model-id
-```
+**From Railway without a shell:** set **`OPENCLAW_MODEL_ON_BOOT`** to the same `provider/model` string in Railway Variables and redeploy. On boot, the wrapper runs `models set` **only when that variable’s value changes** (it remembers the last applied value in `${OPENCLAW_STATE_DIR}/.wrapper-last-model-env`). Changing the model from `/setup` does not update that file, so a stale env value won’t keep overwriting your manual change until you change or clear the variable.
 
-For example: `openclaw models set anthropic/claude-sonnet-4-20250514` or `openclaw models set openai/gpt-4-turbo`. Use `openclaw models list --all` to see available models.
+**CLI fallbacks:** Web terminal at `/tui` (`ENABLE_WEB_TUI=true`), or from your laptop with the [Railway CLI](https://docs.railway.com/develop/cli): `railway run openclaw models set provider/model-id` (linked to the same service/environment). Use `openclaw models list --all` where you have a shell to list ids.
 
 **Q: How do I access configuration after the initial setup?**
 
-A: Visit `/setup` on your deployed instance at any time — it works both before and after setup. Once configured, the setup page shows your current status along with management tools: device approval, health checks (Run Doctor), data export, and a reset option. You'll need your `SETUP_PASSWORD` to access it.
+A: Visit `/setup` on your deployed instance at any time — it works both before and after setup. Once configured, the setup page shows your current status along with management tools: **default model** (Apply model), device approval, health checks (Run Doctor), data export, and a reset option. You'll need your `SETUP_PASSWORD` to access it.
 
 **Q: My config seems broken or I'm getting strange errors. How do I fix it?**
 

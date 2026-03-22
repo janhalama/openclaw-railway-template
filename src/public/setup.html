@@ -29,6 +29,7 @@
       whatsappAllowFrom: '',
       whatsappGroupPolicy: 'open',
       model: '',
+      configuredModel: '',
       log: '',
       loading: false,
       pairingChannel: '',
@@ -77,6 +78,9 @@
           }
           if (j.channelsAddHelp && j.channelsAddHelp.indexOf('telegram') === -1) {
             this.log += '\nNote: this openclaw build does not list telegram in `channels add --help`. Telegram auto-add will be skipped.\n';
+          }
+          if (j.configured) {
+            this.configuredModel = String(j.currentModel || '');
           }
           this.isReady = true;
         } catch (e) {
@@ -222,6 +226,38 @@
             this.log += '\n✓ Doctor completed successfully\n';
           } else {
             this.log += '\n✗ Doctor found issues\n';
+          }
+        } catch (e) {
+          this.log += 'Error: ' + String(e) + '\n';
+        } finally {
+          this.loading = false;
+        }
+      },
+
+      async applyConfiguredModel() {
+        const m = (this.configuredModel || '').trim();
+        if (!m) {
+          alert('Enter a model id (e.g. anthropic/claude-sonnet-4-20250514) or an alias');
+          return;
+        }
+        this.log = 'Setting model...\n';
+        this.loading = true;
+        try {
+          const res = await fetch('/setup/api/models/set', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ model: m })
+          });
+          const text = await res.text();
+          let j;
+          try { j = JSON.parse(text); } catch (_e) { j = { ok: false, output: text }; }
+          this.log += (j.output || JSON.stringify(j, null, 2)) + '\n';
+          if (j.ok) {
+            this.log += '✓ Model updated; gateway restarted.\n';
+            await this.refreshStatus();
+          } else {
+            this.log += '✗ Model update failed\n';
           }
         } catch (e) {
           this.log += 'Error: ' + String(e) + '\n';
@@ -385,6 +421,23 @@
       <div class="card">
         <h2 class="card-title">Setup Complete</h2>
         <p class="text-muted text-sm">Your OpenClaw instance is configured and running</p>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title" style="font-size:1rem">Model</h3>
+        <p class="card-subtitle">Change the default model without shell access (runs <code class="code-inline">openclaw models set</code>)</p>
+        <div class="form-group">
+          <label class="label">provider/model or alias</label>
+          <input x-model="configuredModel" type="text" class="input" placeholder="e.g. anthropic/claude-sonnet-4-20250514" autocomplete="off" />
+          <p class="form-hint text-xs">Prefilled from <code class="code-inline">openclaw models status --json</code> when available. Double-check spelling (e.g. <code class="code-inline">anthropic</code> not <code class="code-inline">antropic</code>).</p>
+        </div>
+        <button type="button" @click="applyConfiguredModel()" :disabled="loading" class="btn btn-primary">
+          <span x-show="!loading">Apply model</span>
+          <span x-show="loading" style="display:inline-flex;align-items:center;gap:0.5rem">
+            <svg class="spinner-inline" fill="none" viewBox="0 0 24 24"><circle style="opacity:0.25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path style="opacity:0.75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+            Applying…
+          </span>
+        </button>
       </div>
 
       <div class="card">

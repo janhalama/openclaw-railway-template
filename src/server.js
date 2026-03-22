@@ -515,6 +515,11 @@ app.get("/setup/api/status", requireSetupAuth, async (_req, res) => {
     },
   ];
 
+  let currentModel = "";
+  if (isConfigured()) {
+    currentModel = await fetchCurrentResolvedModel();
+  }
+
   res.json({
     configured: isConfigured(),
     gatewayTarget: GATEWAY_TARGET,
@@ -522,6 +527,7 @@ app.get("/setup/api/status", requireSetupAuth, async (_req, res) => {
     channelsAddHelp: channelsHelp,
     authGroups,
     tuiEnabled: ENABLE_WEB_TUI,
+    currentModel,
   });
 });
 
@@ -597,6 +603,118 @@ function runCmd(cmd, args, opts = {}) {
 
     proc.on("close", (code) => resolve({ code: code ?? 0, output: out }));
   });
+}
+
+const MODEL_ID_MAX_LEN = 200;
+const LAST_ENV_MODEL_FILE = ".wrapper-last-model-env";
+
+function validateModelIdString(raw) {
+  const s = typeof raw === "string" ? raw.trim() : "";
+  if (!s) return "Model is required";
+  if (s.length > MODEL_ID_MAX_LEN) {
+    return `Model must be at most ${MODEL_ID_MAX_LEN} characters`;
+  }
+  if (/[\r\n\0]/.test(s)) return "Model contains invalid characters";
+  if (s.includes("/")) {
+    if (!/^[a-z0-9][a-z0-9._-]*\/\S+$/i.test(s)) {
+      return "Invalid model format: expected provider/model (e.g. anthropic/claude-sonnet-4)";
+    }
+    return null;
+  }
+  if (!/^[a-zA-Z][a-zA-Z0-9._-]{0,79}$/.test(s)) {
+    return "Invalid model alias";
+  }
+  return null;
+}
+
+function extractJsonObject(text) {
+  const t = text.trim();
+  const start = t.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0;
+  for (let i = start; i < t.length; i++) {
+    const c = t[i];
+    if (c === "{") depth++;
+    else if (c === "}") {
+      depth--;
+      if (depth === 0) {
+        try {
+          return JSON.parse(t.slice(start, i + 1));
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+async function fetchCurrentResolvedModel() {
+  if (!isConfigured()) return "";
+  const result = await runCmd(
+    OPENCLAW_NODE,
+    clawArgs(["models", "status", "--json"]),
+  );
+  const j = extractJsonObject(result.output);
+  if (!j) return "";
+  const pick =
+    j.default?.model ??
+    j.defaultModel ??
+    j.models?.default ??
+    j.resolved?.default ??
+    j.model;
+  if (typeof pick === "string") return pick;
+  if (pick && typeof pick === "object") {
+    return pick.id ?? pick.ref ?? pick.model ?? "";
+  }
+  return "";
+}
+
+async function applyOpenclawModelOnBoot() {
+  const envModel = process.env.OPENCLAW_MODEL_ON_BOOT?.trim();
+  if (!envModel) return;
+  if (!isConfigured()) return;
+  const lastPath = path.join(STATE_DIR, LAST_ENV_MODEL_FILE);
+  let last = "";
+  try {
+    last = fs.readFileSync(lastPath, "utf8").trim();
+  } catch {
+    /* missing file */
+  }
+  if (last === envModel) {
+    log.info(
+      "wrapper",
+      `OPENCLAW_MODEL_ON_BOOT unchanged (${envModel}), skip models set`,
+    );
+    return;
+  }
+  const verr = validateModelIdString(envModel);
+  if (verr) {
+    log.warn("wrapper", `OPENCLAW_MODEL_ON_BOOT invalid: ${verr}`);
+    return;
+  }
+  log.info("wrapper", `Applying OPENCLAW_MODEL_ON_BOOT=${envModel}`);
+  const result = await runCmd(
+    OPENCLAW_NODE,
+    clawArgs(["models", "set", envModel]),
+  );
+  if (result.code !== 0) {
+    log.warn(
+      "wrapper",
+      `models set (boot) failed exit=${result.code} ${result.output}`,
+    );
+    return;
+  }
+  try {
+    fs.mkdirSync(STATE_DIR, { recursive: true });
+    fs.writeFileSync(lastPath, envModel, { encoding: "utf8", mode: 0o600 });
+  } catch (err) {
+    log.warn(
+      "wrapper",
+      `could not write ${LAST_ENV_MODEL_FILE}: ${err.message}`,
+    );
+  }
+  log.info("wrapper", "OPENCLAW_MODEL_ON_BOOT applied successfully");
 }
 
 const VALID_AUTH_CHOICES = [
@@ -905,6 +1023,47 @@ app.post("/setup/api/doctor", requireSetupAuth, async (_req, res) => {
     ok: result.code === 0,
     output: result.output,
   });
+});
+
+app.post("/setup/api/models/set", requireSetupAuth, async (req, res) => {
+  try {
+    if (!isConfigured()) {
+      return res.status(400).json({
+        ok: false,
+        output: "Not configured. Run setup first.",
+      });
+    }
+    const model = req.body?.model;
+    if (typeof model !== "string") {
+      return res.status(400).json({ ok: false, output: "Missing model" });
+    }
+    const trimmed = model.trim();
+    const verr = validateModelIdString(trimmed);
+    if (verr) {
+      return res.status(400).json({ ok: false, output: verr });
+    }
+    const result = await runCmd(
+      OPENCLAW_NODE,
+      clawArgs(["models", "set", trimmed]),
+    );
+    if (result.code === 0) {
+      try {
+        await restartGateway();
+      } catch (err) {
+        log.warn("models-set", `restartGateway after models set: ${err.message}`);
+      }
+    }
+    return res.status(result.code === 0 ? 200 : 500).json({
+      ok: result.code === 0,
+      output: result.output || "(no output)",
+    });
+  } catch (err) {
+    log.error("models-set", String(err));
+    return res.status(500).json({
+      ok: false,
+      output: `Internal error: ${String(err)}`,
+    });
+  }
 });
 
 app.get("/setup/api/devices", requireSetupAuth, async (_req, res) => {
@@ -1266,6 +1425,11 @@ const server = app.listen(PORT, () => {
         if (dr.output) log.info("wrapper", dr.output);
       } catch (err) {
         log.warn("wrapper", `doctor --fix failed: ${err.message}`);
+      }
+      try {
+        await applyOpenclawModelOnBoot();
+      } catch (err) {
+        log.warn("wrapper", `OPENCLAW_MODEL_ON_BOOT: ${err.message}`);
       }
       await ensureGatewayRunning();
     })().catch((err) => {
